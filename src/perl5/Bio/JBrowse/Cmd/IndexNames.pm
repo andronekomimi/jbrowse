@@ -1,5 +1,4 @@
 package Bio::JBrowse::Cmd::IndexNames;
-
 =head1 NAME
 
 Bio::JBrowse::Cmd::IndexNames - script module to create or update a
@@ -129,8 +128,9 @@ sub load {
         sub {
             my ( $operation, $data ) = @_;
             my %fake_store = ( $operation->[0] => $data );
-            $self->do_hash_operation( \%fake_store, $operation );
-            return $fake_store{ $operation->[0] } ;
+            my $dirty=$self->do_hash_operation( \%fake_store, $operation );
+
+            return ($dirty, $fake_store{ $operation->[0] });
         },
         $self->{stats}{operation_stream_estimated_count},
         );
@@ -436,6 +436,8 @@ sub do_hash_operation {
 
     my ( $lc_name, $op_name, $record ) = @$op;
 
+    my $dirty=0;
+
     if( $op_name == $OP_ADD_EXACT ) {
         my $r = $store->{$lc_name};
         $r = $r ? $self->_hash_operation_thaw($r) : { exact => [], prefix => [] };
@@ -455,6 +457,8 @@ sub do_hash_operation {
         # elsif( $verbose ) {
         #     print STDERR "Warning: $name has more than --locationLimit ($self->{max_locations}) distinct locations, not all of them will be indexed.\n";
         # }
+
+        $dirty=1;
     }
     elsif( $op_name == $OP_ADD_PREFIX && ! exists $full_entries{$lc_name} ) {
         my $r = $store->{$lc_name};
@@ -474,7 +478,12 @@ sub do_hash_operation {
             $store->{$lc_name} = $self->_hash_operation_freeze( $r );
             $full_entries{$lc_name} = 1;
         }
+
+        $dirty=1;
     }
+    else {print "WHATOP $op_name $full_entries{$lc_name} $lc_name\n"; }
+
+    return $dirty;
 }
 
 # each of these takes an input filename and returns a subroutine that

@@ -1,5 +1,4 @@
 =head1 NAME
-
 Bio::JBrowse::HashStore - on-disk 2-level hash table
 
 =head1 DESCRIPTION
@@ -33,7 +32,6 @@ use Carp;
 
 use Storable ();
 use JSON 2;
-
 use File::Next ();
 use File::Path ();
 use File::Spec ();
@@ -224,7 +222,13 @@ sub stream_do {
             while ( my $rec = eval { Storable::fd_retrieve( $log_fh ) } ) {
                 my ( $hex, $op ) = @$rec;
                 my $bucket = $self->_getBucketFromHex( $hex );
-                $bucket->{data}{$op->[0]} = $do_operation->( $op, $bucket->{data}{$op->[0]} );
+
+                my ($dirty, $result) = $do_operation->( $op, $bucket->{data}{$op->[0]} );
+                if($dirty) {
+                    $bucket->{data}{$op->[0]} = $result;
+                    $bucket->{dirty} = 1;
+                }
+                else { print "NOTDIRTY\n"; }
 
                 if ( $progressbar && ++$ops_played_back > $progressbar_next_update ) {
                     $progressbar_next_update = $progressbar->update( $ops_played_back );
@@ -388,7 +392,6 @@ sub _readBucket {
     my $path = $pathinfo->{fullpath}.( $self->{compress} ? 'z' : '' );
     my $dir = $pathinfo->{dir};
     my $gzip = $self->{compress} ? ':gzip' : '';
-
     return $bucket_class->new(
         format => $self->{format},
         compress => $self->{compress},
@@ -414,17 +417,15 @@ sub _readBucket {
 ######## inner class for on-disk hash buckets ##########
 
 package Bio::JBrowse::HashStore::Bucket;
-
 sub new {
     my $class = shift;
     bless { @_ }, $class;
 }
-
 # when a bucket is deleted, flush it to disk
 sub DESTROY {
     my ( $self ) = @_;
-
     if( $self->{dirty} && %{$self->{data}} ) {
+        print STDERR "DESTROY DIRTY\n";
         File::Path::mkpath( $self->{dir} ) unless -d $self->{dir};
         if( $self->{format} eq 'storable' ) {
             Storable::store( $self->{data}, $self->{fullpath} );
